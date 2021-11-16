@@ -51,16 +51,16 @@ karch_dataset <- "./datasetsOri/base_dataset_FINAL03.csv.gz"
 
 kapply_mes       <- c(202011)  #El mes donde debo aplicar el modelo
 
-ktrain_subsampling  <- 1.0   #el undersampling que voy a hacer de los continua
+ktrain_subsampling  <- 0.25   #el undersampling que voy a hacer de los continua
 
-ktrain_mes_hasta    <- 202010  #Obviamente, solo puedo entrenar hasta 202011
-ktrain_mes_desde    <- 201801
+ktrain_mes_hasta    <- 202009  #Obviamente, solo puedo entrenar hasta 202011
+ktrain_mes_desde    <- 202001
 #ktrain_mes_desde    <- 202010
 
 ktrain_meses_malos  <- c()  #meses que quiero excluir del entrenamiento
 
-kgen_mes_hasta    <- 202010  #Obviamente, solo puedo entrenar hasta 202011
-kgen_mes_desde    <- 201801
+kgen_mes_hasta    <- 202009  #Obviamente, solo puedo entrenar hasta 202011
+kgen_mes_desde    <- 202001
 #kgen_mes_desde    <- 202010
 
 #Aqui se cargan los hiperparametros
@@ -294,7 +294,6 @@ kbayesiana  <- paste0("./work/E",  kexperimento, "_", kscript, ".RDATA" )
 klog        <- paste0("./work/E",  kexperimento, "_", kscript, ".txt" )
 kimp        <- paste0("./work/E",  kexperimento, "_", kscript, "_" )
 kkaggle     <- paste0("./kaggle/E",kexperimento, "_", kscript, "_" )
-kmodelitos    <- paste0("./modelitos/E", kexperimento, "_modelitos.csv.gz" )
 
 GLOBAL_ganancia_max  <-  -Inf
 GLOBAL_iteracion  <- 0
