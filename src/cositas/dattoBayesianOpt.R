@@ -47,21 +47,21 @@ kscript           <- "datto_bayesian"
 kBO_iter    <-  150   #cantidad de iteraciones de la Optimizacion Bayesiana
 
 #karch_dataset    <- "./datasets/dataset_epic_simple_v007.csv.gz"   #este dataset se genero en el script 812_dataset_epic.r
-karch_dataset <- "C:/Users/ldattoli/Desktop/base_dataset_FINAL03.csv.gz"
+karch_dataset <- "./datasetsOri/base_dataset_FINAL03.csv.gz"
 
 kapply_mes       <- c(202011)  #El mes donde debo aplicar el modelo
 
 ktrain_subsampling  <- 1.0   #el undersampling que voy a hacer de los continua
 
 ktrain_mes_hasta    <- 202010  #Obviamente, solo puedo entrenar hasta 202011
-#ktrain_mes_desde    <- 201801
-ktrain_mes_desde    <- 202010
+ktrain_mes_desde    <- 201801
+#ktrain_mes_desde    <- 202010
 
 ktrain_meses_malos  <- c()  #meses que quiero excluir del entrenamiento
 
 kgen_mes_hasta    <- 202010  #Obviamente, solo puedo entrenar hasta 202011
-#kgen_mes_desde    <- 201801
-kgen_mes_desde    <- 202010
+kgen_mes_desde    <- 201801
+#kgen_mes_desde    <- 202010
 
 #Aqui se cargan los hiperparametros
 hs <- makeParamSet( 
@@ -80,7 +80,7 @@ hs <- makeParamSet(
   makeNumericParam("min_gain_to_split",       lower=0.0   , upper= 1.0)
 )
 
-#campos_malos  <-  c("clase_ternaria", "clase01", "internet", "numero_de_cliente", "foto_mes", "tpaquete1", "ccajeros_propios_descuentos", "mcajeros_propios_descuentos", "ctarjeta_visa_descuentos", "mtarjeta_visa_descuentos", "ctarjeta_master_descuentos", "mtarjeta_master_descuentos", "tmobile_app", "cmobile_app_trx")   #aqui se deben cargar todos los campos culpables del Data Drifting
+campos_malos  <-  c()   #aqui se deben cargar todos los campos culpables del Data Drifting
 
 ksemilla_azar  <- 102191  #Aqui poner la propia semilla
 #------------------------------------------------------------------------------
@@ -294,7 +294,7 @@ kbayesiana  <- paste0("./work/E",  kexperimento, "_", kscript, ".RDATA" )
 klog        <- paste0("./work/E",  kexperimento, "_", kscript, ".txt" )
 kimp        <- paste0("./work/E",  kexperimento, "_", kscript, "_" )
 kkaggle     <- paste0("./kaggle/E",kexperimento, "_", kscript, "_" )
-
+kmodelitos    <- paste0("./modelitos/E", kexperimento, "_modelitos.csv.gz" )
 
 GLOBAL_ganancia_max  <-  -Inf
 GLOBAL_iteracion  <- 0
@@ -305,6 +305,12 @@ if( file.exists(klog) )
   tabla_log  <- fread( klog)
   GLOBAL_iteracion  <- nrow( tabla_log ) -1
   GLOBAL_ganancia_max  <- tabla_log[ , max(ganancia) ]
+} else {
+  GLOBAL_iteracion  <- 0
+  GLOBAL_ganancia_max  <- -Inf
+  
+  tb_modelitos  <- dataset[  ,  c("numero_de_cliente","foto_mes"), with=FALSE ]
+  fwrite( tb_modelitos, file= kmodelitos, sep= "," )
 }
 
 
@@ -317,17 +323,32 @@ dapply  <- copy( dataset[  foto_mes %in% kapply_mes ] )
 #creo la clase_binaria2   1={ BAJA+2,BAJA+1}  0={CONTINUA}
 dataset[ , clase01:= ifelse( clase_ternaria=="CONTINUA", 0, 1 ) ]
 
+dataset[    foto_mes>= kgen_mes_desde  &
+              foto_mes<= kgen_mes_hasta & 
+              !( foto_mes %in% ktrain_meses_malos ),
+            generacion_final:= 1L ]  #donde entreno
 
+vector_azar  <- runif( nrow(dataset) )
+dataset[    foto_mes>= ktrain_mes_desde  &
+              foto_mes<= ktrain_mes_hasta & 
+              !( foto_mes %in% ktrain_meses_malos ) & 
+              ( clase01==1 | vector_azar < ktrain_subsampling ),  
+            entrenamiento:= 1L ]  #donde entreno
 
 #los campos que se van a utilizar
-campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01", campos_malos) )
+campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01","entrenamiento", campos_malos) )
 
 #dejo los datos en el formato que necesita LightGBM
 #uso el weight como un truco ESPANTOSO para saber la clase real
 #dtrain  <- lgb.Dataset( data= data.matrix(  dataset[ , campos_buenos, with=FALSE]),
 #                        label= dataset$clase01,
 #                        weight=  dataset[ , ifelse(clase_ternaria=="BAJA+2", 1.0000001, 1.0)] )
-
+dtrain  <- lgb.Dataset( data=    data.matrix(  dataset[ entrenamiento==1 , campos_buenos, with=FALSE]),
+                        label=   dataset[ entrenamiento==1, clase01],
+                        weight=  dataset[ entrenamiento==1, ifelse(clase_ternaria=="CONTINUA", 1/ktrain_subsampling,
+                                                                   ifelse( clase_ternaria=="BAJA+2", 1, 1.0000001))] ,
+                        free_raw_data= TRUE
+)
 
 #Aqui comienza la configuracion de la Bayesian Optimization
 
