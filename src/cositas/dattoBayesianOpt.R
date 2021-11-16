@@ -248,7 +248,7 @@ EstimarGanancia_lightgbm  <- function( x )
   #si tengo una ganancia superadora, genero el archivo para Kaggle
   if(  ganancia > GLOBAL_ganancia_max )
   {
-    GLOBAL_ganancia_max  <<- ganancia  #asigno la nueva maxima ganancia a una variable GLOBAL, por eso el <<-
+    GLOBAL_ganancia_max  <<- ganancia_normalizada  #asigno la nueva maxima ganancia a una variable GLOBAL, por eso el <<-
     
     set.seed(ksemilla_azar)
     
@@ -305,12 +305,6 @@ if( file.exists(klog) )
   tabla_log  <- fread( klog)
   GLOBAL_iteracion  <- nrow( tabla_log ) -1
   GLOBAL_ganancia_max  <- tabla_log[ , max(ganancia) ]
-} else {
-  GLOBAL_iteracion  <- 0
-  GLOBAL_ganancia_max  <- -Inf
-  
-  tb_modelitos  <- dataset[  ,  c("numero_de_cliente","foto_mes"), with=FALSE ]
-  fwrite( tb_modelitos, file= kmodelitos, sep= "," )
 }
 
 
