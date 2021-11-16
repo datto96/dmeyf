@@ -39,10 +39,29 @@ setwd( directory.root )
 
 kexperimento  <- NA   #NA si se corre la primera vez, un valor concreto si es para continuar procesando
 
-kscript           <- "682_lgb_prob_auto"
-karch_generacion  <- "./datasetsOri/paquete_premium_202009.csv"
-karch_aplicacion  <- "./datasetsOri/paquete_premium_202011.csv"
+kscript           <- "datto_bayesian"
+#karch_generacion  <- "./datasetsOri/paquete_premium_202009.csv"
+#karch_aplicacion  <- "./datasetsOri/paquete_premium_202011.csv"
+
+#karch_dataset    <- "./datasets/dataset_epic_simple_v007.csv.gz"   #este dataset se genero en el script 812_dataset_epic.r
 kBO_iter    <-  150   #cantidad de iteraciones de la Optimizacion Bayesiana
+
+#karch_dataset    <- "./datasets/dataset_epic_simple_v007.csv.gz"   #este dataset se genero en el script 812_dataset_epic.r
+karch_dataset <- "C:/Users/ldattoli/Desktop/base_dataset_FINAL03.csv.gz"
+
+kapply_mes       <- c(202011)  #El mes donde debo aplicar el modelo
+
+ktrain_subsampling  <- 1.0   #el undersampling que voy a hacer de los continua
+
+ktrain_mes_hasta    <- 202010  #Obviamente, solo puedo entrenar hasta 202011
+#ktrain_mes_desde    <- 201801
+ktrain_mes_desde    <- 202010
+
+ktrain_meses_malos  <- c()  #meses que quiero excluir del entrenamiento
+
+kgen_mes_hasta    <- 202010  #Obviamente, solo puedo entrenar hasta 202011
+#kgen_mes_desde    <- 201801
+kgen_mes_desde    <- 202010
 
 #Aqui se cargan los hiperparametros
 hs <- makeParamSet( 
@@ -61,7 +80,7 @@ hs <- makeParamSet(
   makeNumericParam("min_gain_to_split",       lower=0.0   , upper= 1.0)
 )
 
-campos_malos  <-  c("clase_ternaria", "clase01", "internet", "numero_de_cliente", "foto_mes", "tpaquete1", "ccajeros_propios_descuentos", "mcajeros_propios_descuentos", "ctarjeta_visa_descuentos", "mtarjeta_visa_descuentos", "ctarjeta_master_descuentos", "mtarjeta_master_descuentos", "tmobile_app", "cmobile_app_trx")   #aqui se deben cargar todos los campos culpables del Data Drifting
+#campos_malos  <-  c("clase_ternaria", "clase01", "internet", "numero_de_cliente", "foto_mes", "tpaquete1", "ccajeros_propios_descuentos", "mcajeros_propios_descuentos", "ctarjeta_visa_descuentos", "mtarjeta_visa_descuentos", "ctarjeta_master_descuentos", "mtarjeta_master_descuentos", "tmobile_app", "cmobile_app_trx")   #aqui se deben cargar todos los campos culpables del Data Drifting
 
 ksemilla_azar  <- 102191  #Aqui poner la propia semilla
 #------------------------------------------------------------------------------
@@ -119,6 +138,8 @@ fganancia_logistic_lightgbm   <- function(probs, datos)
   
   setorder( tbl, -prob )
   tbl[ , gan_acum :=  cumsum( gan ) ]
+  #tbl[ , posicion :=  cumsum( peso ) ]
+  
   gan  <- max( tbl$gan_acum )
   
   VPROBS_CORTE  <<- c(VPROBS_CORTE,  tbl[ which.max( tbl$gan_acum ) , prob ] )
@@ -128,6 +149,37 @@ fganancia_logistic_lightgbm   <- function(probs, datos)
                 "higher_better"= TRUE ) )
 }
 #------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+
+VPOS_CORTE  <- c()
+
+fganancia_lgbm_meseta  <- function(probs, datos) 
+{
+  vlabels  <- getinfo(datos, "label")
+  vpesos   <- getinfo(datos, "weight")
+  
+  #solo sumo 48750 si vpesos > 1, hackeo 
+  tbl  <- as.data.table( list( "prob"= probs, 
+                               "gan"=  ifelse( vlabels==1 & vpesos <= 1, 48750, -1250 ) *vpesos,
+                               "peso"=  vpesos
+  ) )
+  
+  setorder( tbl, -prob )
+  tbl[ , gan_acum :=  cumsum( gan ) ]
+  tbl[ , posicion :=  cumsum( peso ) ]
+  setorder( tbl, -gan_acum )   #voy por la meseta
+  
+  gan  <- mean( tbl[ 1:10,  gan_acum] )  #meseta de tamaño 10
+  
+  pos_meseta  <- tbl[ 1:10,  median(posicion)]
+  VPOS_CORTE  <<- c( VPOS_CORTE, pos_meseta )
+  
+  return( list( "name"= "ganancia", 
+                "value"=  gan,
+                "higher_better"= TRUE ) )
+}
+#------------------------------------------------------------------------------
+
 #esta funcion solo puede recibir los parametros que se estan optimizando
 #el resto de los parametros se pasan como variables globales, la semilla del mal ...
 
@@ -157,9 +209,16 @@ EstimarGanancia_lightgbm  <- function( x )
   
   #dejo los datos en el formato que necesita LightGBM
   #uso el weight como un truco ESPANTOSO para saber la clase real
-  dtrain  <- lgb.Dataset( data= data.matrix(  dataset[ , campos_buenos, with=FALSE]),
-                          label= dataset$clase01,
-                          weight=  dataset[ , ifelse(clase_ternaria=="BAJA+2", 1.0000001, 1.0)] )
+  #dtrain  <- lgb.Dataset( data= data.matrix(  dataset[ , campos_buenos, with=FALSE]),
+  #                        label= dataset$clase01,
+  #                        weight=  dataset[ , ifelse(clase_ternaria=="BAJA+2", 1.0000001, 1.0)] )
+  dtrain  <- lgb.Dataset( data=    data.matrix(  dataset[ entrenamiento==1 , campos_buenos, with=FALSE]),
+                          label=   dataset[ entrenamiento==1, clase01],
+                          weight=  dataset[ entrenamiento==1, ifelse(clase_ternaria=="CONTINUA", 1/ktrain_subsampling,
+                                                                     ifelse( clase_ternaria=="BAJA+2", 1, 1.0000001))] ,
+                          free_raw_data= TRUE
+  )
+  
   gc()
   
   #el parametro discolo, que depende de otro
@@ -176,7 +235,6 @@ EstimarGanancia_lightgbm  <- function( x )
                        param= param_completo,
                        verbose= -100
   )
-  
   
   ganancia  <- unlist(modelocv$record_evals$valid$ganancia$eval)[ modelocv$best_iter ]
   
@@ -207,7 +265,8 @@ EstimarGanancia_lightgbm  <- function( x )
     
     prediccion  <- predict( modelo, data.matrix( dapply[  , campos_buenos, with=FALSE]) )
     
-    Predicted  <- as.integer( prediccion > param_completo$prob_corte )
+    #Predicted  <- as.integer( prediccion > param_completo$prob_corte )
+    Predicted <- prediccion
     
     entrega  <- as.data.table( list( "numero_de_cliente"= dapply$numero_de_cliente, 
                                      "Predicted"= Predicted)  )
@@ -250,7 +309,10 @@ if( file.exists(klog) )
 
 
 #cargo el dataset donde voy a entrenar el modelo
-dataset  <- fread(karch_generacion)
+dataset  <- fread(karch_dataset)
+
+#cargo los datos donde voy a aplicar el modelo
+dapply  <- copy( dataset[  foto_mes %in% kapply_mes ] )
 
 #creo la clase_binaria2   1={ BAJA+2,BAJA+1}  0={CONTINUA}
 dataset[ , clase01:= ifelse( clase_ternaria=="CONTINUA", 0, 1 ) ]
@@ -266,9 +328,6 @@ campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01", camp
 #                        label= dataset$clase01,
 #                        weight=  dataset[ , ifelse(clase_ternaria=="BAJA+2", 1.0000001, 1.0)] )
 
-
-#cargo los datos donde voy a aplicar el modelo
-dapply  <- fread(karch_aplicacion, stringsAsFactors= TRUE) #leo los datos donde voy a aplicar el modelo
 
 #Aqui comienza la configuracion de la Bayesian Optimization
 
