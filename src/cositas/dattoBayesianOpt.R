@@ -330,7 +330,7 @@ dataset[    foto_mes>= ktrain_mes_desde  &
             entrenamiento:= 1L ]  #donde entreno
 
 #los campos que se van a utilizar
-campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01","entrenamiento", campos_malos) )
+campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01","entrenamiento","generacion_final", campos_malos) )
 
 #dejo los datos en el formato que necesita LightGBM
 #uso el weight como un truco ESPANTOSO para saber la clase real
