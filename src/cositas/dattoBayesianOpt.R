@@ -130,8 +130,8 @@ VPROBS_CORTE  <- c()
 
 fganancia_logistic_lightgbm   <- function(probs, datos) 
 {
-  vlabels  <- getinfo(datos, "label")
-  vpesos   <- getinfo(datos, "weight")
+  vlabels  <- get_field(datos, "label")
+  vpesos   <- get_field(datos, "weight")
   
   #solo sumo 48750 si vpesos > 1, hackeo 
   tbl  <- as.data.table( list( "prob"=probs, "gan"= ifelse( vlabels==1 & vpesos > 1, 48750, -1250 ) ) )
@@ -149,36 +149,7 @@ fganancia_logistic_lightgbm   <- function(probs, datos)
                 "higher_better"= TRUE ) )
 }
 #------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
 
-VPOS_CORTE  <- c()
-
-fganancia_lgbm_meseta  <- function(probs, datos) 
-{
-  vlabels  <- getinfo(datos, "label")
-  vpesos   <- getinfo(datos, "weight")
-  
-  #solo sumo 48750 si vpesos > 1, hackeo 
-  tbl  <- as.data.table( list( "prob"= probs, 
-                               "gan"=  ifelse( vlabels==1 & vpesos <= 1, 48750, -1250 ) *vpesos,
-                               "peso"=  vpesos
-  ) )
-  
-  setorder( tbl, -prob )
-  tbl[ , gan_acum :=  cumsum( gan ) ]
-  tbl[ , posicion :=  cumsum( peso ) ]
-  setorder( tbl, -gan_acum )   #voy por la meseta
-  
-  gan  <- mean( tbl[ 1:10,  gan_acum] )  #meseta de tamaño 10
-  
-  pos_meseta  <- tbl[ 1:10,  median(posicion)]
-  VPOS_CORTE  <<- c( VPOS_CORTE, pos_meseta )
-  
-  return( list( "name"= "ganancia", 
-                "value"=  gan,
-                "higher_better"= TRUE ) )
-}
-#------------------------------------------------------------------------------
 
 #esta funcion solo puede recibir los parametros que se estan optimizando
 #el resto de los parametros se pasan como variables globales, la semilla del mal ...
@@ -246,7 +217,7 @@ EstimarGanancia_lightgbm  <- function( x )
   param_completo["prob_corte"]  <- mean( VPROBS_CORTE )
   
   #si tengo una ganancia superadora, genero el archivo para Kaggle
-  if(  ganancia > GLOBAL_ganancia_max )
+  if(  ganancia_normalizada > GLOBAL_ganancia_max )
   {
     GLOBAL_ganancia_max  <<- ganancia_normalizada  #asigno la nueva maxima ganancia a una variable GLOBAL, por eso el <<-
     
@@ -282,7 +253,7 @@ EstimarGanancia_lightgbm  <- function( x )
   xx$ganancia  <- ganancia_normalizada   #le agrego la ganancia
   loguear( xx,  arch= klog )
   
-  return( ganancia )
+  return( ganancia_normalizada )
 }
 #------------------------------------------------------------------------------
 #Aqui empieza el programa
@@ -336,12 +307,12 @@ campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01","entr
 #dtrain  <- lgb.Dataset( data= data.matrix(  dataset[ , campos_buenos, with=FALSE]),
 #                        label= dataset$clase01,
 #                        weight=  dataset[ , ifelse(clase_ternaria=="BAJA+2", 1.0000001, 1.0)] )
-dtrain  <- lgb.Dataset( data=    data.matrix(  dataset[ entrenamiento==1 , campos_buenos, with=FALSE]),
-                        label=   dataset[ entrenamiento==1, clase01],
-                        weight=  dataset[ entrenamiento==1, ifelse(clase_ternaria=="CONTINUA", 1/ktrain_subsampling,
-                                                                   ifelse( clase_ternaria=="BAJA+2", 1, 1.0000001))] ,
-                        free_raw_data= TRUE
-)
+#dtrain  <- lgb.Dataset( data=    data.matrix(  dataset[ entrenamiento==1 , campos_buenos, with=FALSE]),
+#                        label=   dataset[ entrenamiento==1, clase01],
+#                        weight=  dataset[ entrenamiento==1, ifelse(clase_ternaria=="CONTINUA", 1/ktrain_subsampling,
+#                                                                   ifelse( clase_ternaria=="BAJA+2", 1, 1.0000001))] ,
+#                        free_raw_data= TRUE
+#)
 
 #Aqui comienza la configuracion de la Bayesian Optimization
 
