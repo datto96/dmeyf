@@ -57,7 +57,7 @@ ktrain_mes_hasta    <- 202009  #Obviamente, solo puedo entrenar hasta 202011
 ktrain_mes_desde    <- 202001
 #ktrain_mes_desde    <- 202010
 
-ktrain_meses_malos  <- c()  #meses que quiero excluir del entrenamiento
+ktrain_meses_malos  <- c(202006)  #meses que quiero excluir del entrenamiento
 
 kgen_mes_hasta    <- 202009  #Obviamente, solo puedo entrenar hasta 202011
 kgen_mes_desde    <- 202001
