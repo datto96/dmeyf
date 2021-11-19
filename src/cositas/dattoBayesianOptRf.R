@@ -39,6 +39,9 @@ setwd( directory.root )
 
 kexperimento  <- NA   #NA si se corre la primera vez, un valor concreto si es para continuar procesando
 
+kscript           <- "datto_bayesian_rf"
+
+
 kBO_iter    <-  150   #cantidad de iteraciones de la Optimizacion Bayesiana
 
 #karch_dataset    <- "./datasets/dataset_epic_simple_v007.csv.gz"   #este dataset se genero en el script 812_dataset_epic.r
@@ -72,6 +75,7 @@ hs <- makeParamSet(
   makeNumericParam("min_gain_to_split",       lower=0.0   , upper= 1.0),
   makeNumericParam("feature_fraction",       lower=0.01   , upper= 0.99),
   makeNumericParam("bagging_fraction",       lower=0.01  , upper= 0.99),
+  makeIntegerParam("bagging_freq",       lower=0   , upper= 10)
   makeIntegerParam("max_bin",       lower=2   , upper= 254)
 )
 

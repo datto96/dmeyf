@@ -223,7 +223,7 @@ FullModelo  <- function( hparam )
   predsort  <- sort(prediccion, decreasing=TRUE)
   pos_corte  <- as.integer(hparam$ratio_corte*nrow(dapply))
   prob_corte <- predsort[ pos_corte ]
-  Predicted  <- as.integer( prediccion > prob_corte )
+  Predicted  <- prediccion
   
   entrega  <- as.data.table( list( "numero_de_cliente"= dapply$numero_de_cliente, 
                                    "Predicted"= Predicted)  )
