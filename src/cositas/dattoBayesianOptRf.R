@@ -174,6 +174,15 @@ EstimarGanancia_lightgbm  <- function( x )
                           boosting_type = "rf"
   )
   
+  dtrain  <- lgb.Dataset( data=    data.matrix(  dataset[ entrenamiento==1 , campos_buenos, with=FALSE]),
+                          label=   dataset[ entrenamiento==1, clase01],
+                          weight=  dataset[ entrenamiento==1, ifelse(clase_ternaria=="CONTINUA", 1/ktrain_subsampling,
+                                                                     ifelse( clase_ternaria=="BAJA+2", 1, 1.0000001))] ,
+                          free_raw_data= TRUE
+  )
+  
+  gc()
+  
   #el parametro discolo, que depende de otro
   param_variable  <- list(  early_stopping_rounds= as.integer(50 + 5/x$learning_rate) )
   
@@ -285,14 +294,7 @@ dataset[    foto_mes>= ktrain_mes_desde  &
 #los campos que se van a utilizar
 campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01","entrenamiento","generacion_final", campos_malos) )
 
-#dejo los datos en el formato que necesita LightGBM
-#uso el weight como un truco ESPANTOSO para saber la clase real
-dtrain  <- lgb.Dataset( data=    data.matrix(  dataset[ entrenamiento==1 , campos_buenos, with=FALSE]),
-                        label=   dataset[ entrenamiento==1, clase01],
-                        weight=  dataset[ entrenamiento==1, ifelse(clase_ternaria=="CONTINUA", 1/ktrain_subsampling,
-                                                                   ifelse( clase_ternaria=="BAJA+2", 1, 1.0000001))] ,
-                        free_raw_data= TRUE
-)
+
 
 
 #cargo los datos donde voy a aplicar el modelo
