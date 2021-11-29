@@ -23,7 +23,7 @@ setwd( directory.root )
 kexperimento  <- NA
 
 kscript         <- "2000_berreta"
-karch_dataset   <- "./datasetsOri/base_dataset_FINAL03.csv.gz"  #el dataset que voy a utilizar
+karch_dataset   <- "./datasets/base_dataset_FINAL03.csv.gz"  #el dataset que voy a utilizar
 #karch_realidad  <- "./datasets/realidad_202101.csv"  #el dataset que voy a utilizar
 
 ktest_mes_hasta  <- 202011  #Esto es lo que uso para testing
@@ -74,11 +74,6 @@ dataset  <- fread(karch_dataset)
 
 #cargo los datos donde voy a aplicar el modelo
 dtest  <- copy( dataset[ foto_mes>= ktest_mes_desde &  foto_mes<= ktest_mes_hasta,  ] )
-#drealidad  <- fread(karch_realidad)
-#dtest[ drealidad, on="numero_de_cliente", Usage := i.Usage ]
-#dtest[ drealidad, on="numero_de_cliente", Predicted := i.Predicted ]
-#dtest[  , gan :=  ifelse( Predicted==1, 48750, -1250 ) ]
-
 
 #creo la clase_binaria2   1={ BAJA+2,BAJA+1}  0={CONTINUA}
 dataset[ , clase01:= ifelse( clase_ternaria=="CONTINUA", 0, 1 ) ]
@@ -120,51 +115,25 @@ rm( "dataset" )   #libero memoria para el dataset
 gc()              #garbage collection
 
 
-#Estos son los parametros que estan fijos 
-param_basicos  <- list( objective= "binary",
-                        metric= "custom",
-                        first_metric_only= TRUE,
-                        boost_from_average= TRUE,
-                        feature_pre_filter= FALSE,
-                        max_depth=  -1,         # -1 significa no limitar,  por ahora lo dejo fijo
-                        min_gain_to_split= 0.0, #por ahora, lo dejo fijo
-                        lambda_l1= 0.0,         #por ahora, lo dejo fijo
-                        lambda_l2= 0.0,         #por ahora, lo dejo fijo
-                        max_bin= 31,            #por ahora, lo dejo fijo
-                        force_row_wise= TRUE    #para que los alumnos no se atemoricen con tantos warning
-)
-
-
 #Estos hiperparametros salieron de la optimizacion bayesiana del script 962
 #ganancia  7706250  ( sobre la mitad de 202011 )
 #hiperparametros encontrados en la iteracion bayesiana 41 de un total de 100 inteligentes
-param_ganadores  <- list( "learning_rate"= 0.0289933062436432, 
-                          "feature_fraction"= 0.914142998647527,
-                          "min_data_in_leaf"= 367,
-                          "num_leaves"= 455,
-                          "num_iterations"= 461,
-                          "ratio_corte"= 0.0465659156440689
-)
 
-#junto ambas listas de parametros en una sola
-param_completo  <- c( param_basicos, param_ganadores )
-
+#ATENCION
+#aqui deben ir los mejores valores que salieron de la optimizacion bayesiana
 
 #donde voy a guardar los resultados
 tb_resultados  <- data.table( traingen= integer(),
                               semilla= integer(), 
                               subsampling= numeric(),
-                              oficial= integer(),  #SI es el punto oficial
-                              meseta= integer(),
                               ganancia= numeric(),
                               semillapubpriv= integer(),
-                              meseta_pub= integer(),
                               ganancia_pub= numeric(),
                               meseta_priv= integer(),
                               ganancia_priv= numeric()
 )
 
-set.seed( 102191 )   #dejo fija esta semilla
+set.seed( 13 )   #dejo fija esta semilla
 CANTIDAD_SEMILLAS  <- 50
 
 #me genero un vector de semilla buscando numeros primos al azar
@@ -175,12 +144,49 @@ ksemillapubpriv <- sample(primos)[ 1:CANTIDAD_SEMILLAS ]   #me quedo con CANTIDA
 ksemillapubpriv  <- c( 999983, ksemillapubpriv )
 
 for(traingen in names(dtrains))   #itero por las semillas
-{
-  print(paste(c("Entrenando el modelo E5000 con dtrain de año:", traingen), collapse = " "))
+{ 
+
+  print(paste(c("Entrenando el modelo con dtrain de año:", traingen), collapse = " "))
   dentrenamiento <- dtrains[[traingen]]
   for(  semillita  in  ksemillas )
   {
     gc()
+    
+    x <- list()  
+    x$gleaf_size   <- 46.9692297882587 
+    x$gnum_leaves  <-  0.790542672318083
+    
+    #Hago la transformacion de los hiperparametros, esto vale para el sampleo de 0.1
+    # modificar para otro razón de sampleo
+    x$min_data_in_leaf  <- pmax( 4 , as.integer( round( nrow(dentrenamiento) /(1+ exp(x$gleaf_size/10.0) ) ) ) )
+    max_leaves          <- as.integer( 1 + nrow(dentrenamiento) / x$min_data_in_leaf )
+    x$num_leaves        <- pmin(  pmax(  2,  as.integer( round(x$gnum_leaves*max_leaves)) ), 100000 )
+
+    param_ganadores  <- list( "learning_rate"= 0.134878237279439, 
+                              "feature_fraction"= 0.268018000020203,
+                              "min_data_in_leaf"= x$min_data_in_leaf,
+                              "num_leaves"= x$num_leaves ,
+                              "num_iterations"= 99,
+                              "max_bin"=58
+    )
+    
+    #Estos son los parametros que estan fijos 
+    param_basicos  <- list(objective= "binary",
+                           metric= "custom",
+                           first_metric_only= TRUE,
+                           boost_from_average= TRUE,
+                           feature_pre_filter= FALSE,
+                           verbosity = -100,
+                           max_depth=  -1,         # -1 significa no limitar,  por ahora lo dejo fijo
+                           min_gain_to_split= 0.0, #por ahora, lo dejo fijo
+                           lambda_l1= 0.0,         #por ahora, lo dejo fijo
+                           lambda_l2= 0.0,         #por ahora, lo dejo fijo          #por ahora, lo dejo fijo
+                           force_row_wise= TRUE    #para que los alumnos no se atemoricen con tantos warning
+    )
+    
+    #junto ambas listas de parametros en una sola
+    param_completo  <- c( param_basicos, param_ganadores )
+    
     param_completo$seed  <- semillita   #asigno la semilla a esta corrida
     
     set.seed( semillita )
@@ -189,21 +195,13 @@ for(traingen in names(dtrains))   #itero por las semillas
                           param= param_completo )
     
     #aplico el modelo a los datos que elegi para testing  202011
-    prediccion  <- predict( modelo, data.matrix( dtest[ , campos_buenos, with=FALSE]) )
+    prediccion  <- predict( modelo, data.matrix( dtest[ , campos_buenos, with=FALSE]))
     
-    tb_meseta  <- as.data.table( list( "prob"=prediccion,  "gan"=  dtest[ , ifelse( clase_ternaria=="BAJA+2", 48750, - 1250)] ))
+    tbl  <- as.data.table( list( "prob"=prediccion,  "gan"=  dtest[ , ifelse( clase_ternaria=="BAJA+2", 48750, - 1250)] ))
     
-    #creo una tabla con las probabilidades y la ganancia de ese registro
-    #tb_meseta  <- as.data.table( list( "prob"=prediccion,  
-    #                                   "Usage"=  dtest[ , Usage],
-    #                                   "gan"=  dtest[ , gan] ) )
-    
-    setorder( tb_meseta,  -prob )
-    
-    #calculo la ganancia  para el ratio de corte original
-    pos_corte  <- as.integer( nrow(dtest)* param_completo$ratio_corte )
-    
-    ganancia   <- tb_meseta[  1:pos_corte, sum(gan) ]
+    setorder( tbl,  -prob )
+    tbl[ , gan_acum :=  cumsum( gan ) ]
+    ganancia  <-  tbl[ , max(gan_acum) ]
     
     for(semillitapubpriv in ksemillapubpriv)
     {
@@ -214,52 +212,26 @@ for(traingen in names(dtrains))   #itero por las semillas
       
       #aplico el modelo a los datos que elegi para testing  202011 public
       prediccionpub  <- predict( modelo, data.matrix( dtest[ pubIndex, campos_buenos, with=FALSE]) )
-      tb_meseta_pub  <- as.data.table( list( "prob"=prediccionpub,  "gan"=  dtest[pubIndex , ifelse( clase_ternaria=="BAJA+2", 48750, - 1250)] ))
-      setorder( tb_meseta_pub,  -prob )
-      pos_corte_pub  <- as.integer( nrow(dtest[ pubIndex,])* param_completo$ratio_corte )
-      ganancia_pub   <- tb_meseta_pub[  1:pos_corte_pub, sum(gan) ]
-      ganancia_pub_norm <- ganancia_pub / 0.3
+      tbl_pub  <- as.data.table( list( "prob"=prediccionpub,  "gan"=  dtest[pubIndex , ifelse( clase_ternaria=="BAJA+2", 48750, - 1250)] ))
+      setorder( tbl_pub,  -prob )
+      tbl_pub[ , gan_acum :=  cumsum( gan ) ]
+      ganancia_pub_norm  <-  tbl_pub[ , max(gan_acum)]/0.3
       
       #aplico el modelo a los datos que elegi para testing  202011 private
       prediccionpriv  <- predict( modelo, data.matrix( dtest[ -pubIndex, campos_buenos, with=FALSE]) )
-      tb_meseta_priv  <- as.data.table( list( "prob"=prediccionpriv,  "gan"=  dtest[-pubIndex , ifelse( clase_ternaria=="BAJA+2", 48750, - 1250)] ))
-      setorder( tb_meseta_priv,  -prob )
-      pos_corte_priv  <- as.integer( nrow(dtest[ -pubIndex,])* param_completo$ratio_corte )
-      ganancia_priv   <- tb_meseta_priv[  1:pos_corte_priv, sum(gan) ]
-      ganancia_priv_norm <- ganancia_priv / 0.7
+      tbl_priv  <- as.data.table( list( "prob"=prediccionpriv,  "gan"=  dtest[-pubIndex , ifelse( clase_ternaria=="BAJA+2", 48750, - 1250)] ))
+      setorder( tbl_priv,  -prob )
+      tbl_priv[ , gan_acum :=  cumsum( gan ) ]
+      ganancia_priv_norm   <- tbl_priv[ , max(gan_acum)]/ 0.7
+
       
       tb_resultados  <- rbind( tb_resultados, list( traingen,
                                                     semillita, 
                                                     kgen_subsampling,
-                                                    1,  #SI es el punto oficial
-                                                    pos_corte,
                                                     ganancia,
                                                     semillitapubpriv,
-                                                    pos_corte_pub,
                                                     ganancia_pub_norm,
-                                                    pos_corte_priv,
-                                                    ganancia_priv_norm) )  #agrego la ganancia estandar
-      
-      for( punto_meseta  in seq( 5000, 20000, by=500 ) )  #itero desde 5000 a 15000 , de a 500 
-      {
-        ganancia  <-  tb_meseta[ 1:punto_meseta, sum(gan) ]
-        ganancia_pub   <- tb_meseta_pub[  1:punto_meseta, sum(gan) ]
-        ganancia_pub_norm <- ganancia_pub / 0.3
-        ganancia_priv   <- tb_meseta_priv[  1:punto_meseta, sum(gan) ]
-        ganancia_priv_norm <- ganancia_priv / 0.7
-        
-        tb_resultados  <- rbind( tb_resultados, list( traingen,
-                                                      semillita, 
-                                                      kgen_subsampling,
-                                                      0,  #SI es el punto oficial
-                                                      punto_meseta,
-                                                      ganancia,
-                                                      semillitapubpriv,
-                                                      punto_meseta,
-                                                      ganancia_pub_norm,
-                                                      punto_meseta,
-                                                      ganancia_priv_norm) )  #agrego la ganancia estandar
-      }
+                                                    ganancia_priv_norm)) 
       
       #en cada iteracion GRABO
       fwrite(  tb_resultados,
@@ -270,4 +242,5 @@ for(traingen in names(dtrains))   #itero por las semillas
   }
   
 }
+
 
