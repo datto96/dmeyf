@@ -1,0 +1,221 @@
+#limpio la memoria
+rm( list=ls() )  #remove all objects
+gc()             #garbage collection
+
+require("data.table")
+require("lightgbm")
+require("primes")
+
+setwd("~/buckets/b1/")
+
+karch_dataset  <- "./datasets/base_dataset_FINAL03.csv.gz" # cambiar por dataset que corresponda
+ksalida  <- "semillerio" 
+
+kcantidad_semillas  <- 200 # pensar bien cuantas acumulamos
+
+#ATENCION
+#aqui deben ir los mejores valores que salieron de la optimizacion bayesiana
+
+x  <- list()
+
+# light GBM de semillerío
+
+x$gleaf_size   <-  66.4987792105554
+x$gnum_leaves  <-  0.274163573546582
+x$learning_rate <-  0.02006074323088
+x$feature_fraction <-  0.66501212572067
+x$num_iterations  <- 796
+x$max_bin <- 31 # default en scripts de Gustsy
+x$max_depth <- -1 # default en scripts de Gustsy
+x$lambda_l1 <- 0 # default en scripts de Gustsy
+x$lambda_l2 <- 0  # default en scripts de Gustsy
+x$min_gain_to_split <- 0 # default en scripts de Gustsy
+
+# light GBM común  
+
+#x$num_iterations  <-
+#x$learning_rate <-
+#x$feature_fraction <-
+#x$min_data_in_leaf <-
+#x$num_leaves <-
+#x$max_depth <-
+#x$lambda_l1 <-
+#x$lambda_l2 <-
+#x$gamma <-
+#x$max_bin <-
+#x$min_child_weight <-
+#x$scale_pos_weight <-
+#x$subsample <-
+#x$min_gain_to_split <-
+
+# XGBoost
+
+#x$nrounds
+#x$eta <-
+#x$colsample_bytree <-
+#x$max_leaves <-
+#x$max_depth <-
+#x$alpha <-
+#x$lambda <-
+#x$max_bin <-
+#x$min_child_weight <-
+#x$scale_pos_weight <-
+#x$subsample <-
+#x$gamma <-
+  
+  
+  #------------------------------------------------------------------------------
+
+particionar  <- function( data,  division, agrupa="",  campo="fold", start=1, seed=NA )
+{
+  if( !is.na(seed) )   set.seed( seed )
+  
+  bloque  <- unlist( mapply(  function(x,y) { rep( y, x )} ,   division,  seq( from=start, length.out=length(division) )  ) )  
+  
+  data[ ,  (campo) :=  sample( rep( bloque, ceiling(.N/length(bloque))) )[1:.N],
+        by= agrupa ]
+}
+#------------------------------------------------------------------------------
+
+
+setwd("~/buckets/b1/")
+
+set.seed( 13 )   # elegir a gusto
+
+#me genero un vector de semilla buscando numeros primos al azar
+primos  <- generate_primes(min=100000, max=1000000)  #genero TODOS los numeros primos entre 100k y 1M
+ksemillas  <- sample(primos)[ 1:kcantidad_semillas ]   #me quedo con CANTIDAD_SEMILLAS primos al azar
+
+#cargo el dataset donde voy a entrenar
+dataset  <- fread(karch_dataset)
+
+dataset  <- dataset[ foto_mes >= 202001 ]
+gc()
+
+
+setorder( dataset,  foto_mes, numero_de_cliente )
+
+#paso la clase a binaria que tome valores {0,1}  enteros
+dataset[ , clase01 := ifelse( clase_ternaria=="CONTINUA", 0L, 1L) ]
+
+# cambiar dependiendo de experimentos
+dataset[  , generacion := 0L ]
+dataset[  foto_mes>=202001 & foto_mes<=202011, generacion := 1L ]
+
+
+# los campos que se van a utilizar
+# agregar campos dependiendo del dataset
+campos_buenos  <- setdiff( colnames(dataset), c("clase_ternaria","clase01", "generacion") )
+
+dfuturo  <- copy( dataset[ foto_mes==202101 ] )
+
+#dejo los datos en el formato que necesita LightGBM
+dtrain  <- lgb.Dataset( data= data.matrix(  dataset[ generacion==1, campos_buenos, with=FALSE]),
+                        label= dataset[ generacion==1, clase01] )
+
+#dejo los datos en el formato que necesita XGBoost
+#dtrain  <- xgb.DMatrix( data = data.matrix(  dataset[ generacion==1 , campos_buenos, with=FALSE]),
+#                        label = dataset[ generacion==1, clase01]
+#)
+
+#Hago la transformacion de los hiperparametros (solo si el modelo viene del semillerío)
+x$min_data_in_leaf  <- pmax( 4 , as.integer( round( nrow(dtrain) /(1+ exp(x$gleaf_size/10.0) ) ) ) )
+max_leaves          <- as.integer( 1 + nrow(dtrain) / x$min_data_in_leaf )
+x$num_leaves        <- pmin(  pmax(  2,  as.integer( round(x$gnum_leaves*max_leaves)) ), 100000 )
+
+#Aqui se deben cargar los parametros
+
+# LightGBM
+param_buenos  <- list( objective= "binary",
+                       metric= "custom",
+                       first_metric_only= TRUE,
+                       boost_from_average= TRUE,
+                       feature_pre_filter= FALSE,
+                       verbosity= -100,
+                       max_depth=  x$max_depth,
+                       max_bin= x$max_bin,
+                       min_gain_to_split= x$min_gain_to_split,
+                       lambda_l1= x$lambda_l1 ,
+                       lambda_l2= x$lambda_l2 , 
+                       num_iterations= x$num_iterations,
+                       learning_rate=  x$learning_rate,
+                       feature_fraction= x$feature_fraction,
+                       min_data_in_leaf=  x$min_data_in_leaf,
+                       num_leaves= x$num_leaves,
+                       # agregar a la lista si faltan
+)
+
+# XGBoost
+
+#param_buenos  <- list( objective = "binary:logistic",
+#                       verbosity = 0,
+#                       grow_policy=  "lossguide",
+#                       tree_method = "hist",
+#                       nrounds = x$nrounds,
+#                       eta <- x$eta,
+#                       colsample_bytree <- x$colsample_bytree,
+#                       max_leaves <- x$max_leaves,
+#                       max_depth <- x$max_depth,
+#                       alpha <- x$alpha,
+#                       lambda <- x$lambda,
+#                       max_bin <- x$max_bin,
+#                       min_child_weight <- x$min_child_weight,
+#                       scale_pos_weight <- x$scale_pos_weight,
+#                       subsample <- x$subsample,
+#                       gamma <- x$gamma)
+
+#inicializo donde voy a guardar los resultados
+tb_predicciones  <- as.data.table( list( predicciones_acumuladas = rep( 0, nrow(dfuturo) ) ) )
+
+isemilla  <- 0
+
+for( semilla in  ksemillas)
+{
+  gc()
+  
+  isemilla  <- isemilla + 1
+  cat( isemilla, " " )  #imprimo para saber por que semilla va, ya que es leeentooooo
+  
+  param_buenos$seed  <- semilla   #aqui utilizo la semilla
+  #genero el modelo
+  set.seed( semilla )
+  modelo  <- lgb.train( data= dtrain,
+                        param= param_buenos )
+ 
+  #modelo  <- xgb.train(param_buenos,
+   #                    data= dtrain,
+    #                   nrounds = param_buenos$nrounds,
+     #                  verbose = 0
+  #)
+  
+  #aplico el modelo a los datos nuevos (debería funcar para LGBM y XGB])
+  prediccion  <- frank(  predict( modelo, 
+                                  data.matrix( dfuturo[ , campos_buenos, with=FALSE ]) ) )
+  
+  tb_predicciones[  , predicciones_acumuladas :=  predicciones_acumuladas +  prediccion ]  #acumulo las predicciones
+  tb_predicciones[  , paste0( "pred_", isemilla ) :=  prediccion ]  #guardo el resultado de esta prediccion
+  
+  
+  if(  isemilla %% 5 == 0 )  #imprimo cada 5 semillas
+  {
+    #Genero la entrega para Kaggle
+    entrega  <- as.data.table( list( "numero_de_cliente"= dfuturo[  , numero_de_cliente],
+                                     "prob"= tb_predicciones$predicciones_acumuladas ) ) #genero la salida
+    
+    setorder( entrega, -prob )
+    
+    
+    for(  corte  in seq( 10000, 15000, 1000) ) #imprimo cortes en 10000, 11000, 12000, 13000, 14000 y 15000
+    {
+      entrega[ ,  Predicted := 0L ]
+      entrega[ 1:corte,  Predicted := 1L ]  #me quedo con los primeros
+      
+      #genero el archivo para Kaggle
+      fwrite( entrega[ , c("numero_de_cliente","Predicted"), with=FALSE], 
+              file=  paste0( "./kaggle/" , ksalida, "_", isemilla,"_",corte, ".csv" ),  
+              sep= "," )
+    }
+  }
+  
+  
+}
